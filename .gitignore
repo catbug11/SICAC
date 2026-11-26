@@ -1,0 +1,5 @@
+.env
+*.dmp
+*.log
+backups/
+app/.venv/

@@ -1,0 +1,96 @@
+# SICAC - Sistema Inteligente de Control de Abastecimiento de Combustible
+# Arquitectura Docker: Oracle Database Free + (aplicacion web)
+#
+# Uso rapido:
+#   cp .env.example .env   &&   nano .env      (completar contrasenas)
+#   docker compose up -d
+#   docker compose logs -f oracle              (esperar "DATABASE IS READY TO USE!")
+
+name: sicac
+
+services:
+
+  oracle:
+    # Imagen OFICIAL de Oracle (edicion Free, variante Full).
+    # Fijar la version exacta en .env para que el despliegue sea reproducible.
+    image: ${ORACLE_IMAGE:-container-registry.oracle.com/database/free:latest}
+    container_name: sicac-oracle
+    hostname: sicac-oracle
+
+    # RDI-01: se levanta solo tras una falla o un reinicio del servidor.
+    restart: unless-stopped
+
+    environment:
+      # Contrasena de SYS, SYSTEM y PDBADMIN (solo se aplica al CREAR la base).
+      ORACLE_PWD: ${ORACLE_PWD:?Falta ORACLE_PWD en el archivo .env}
+      ORACLE_CHARACTERSET: AL32UTF8
+      # SYSDATE / SYSTIMESTAMP en hora de Bolivia (las ventanas de las reglas
+      # RD-01..RD-06 dependen de la hora de cada carga).
+      TZ: America/La_Paz
+      # Las usa db/setup/01_crear_esquema.sh para crear las cuentas del sistema.
+      SICAC_OWNER_PWD: ${SICAC_OWNER_PWD:?Falta SICAC_OWNER_PWD en el archivo .env}
+      SICAC_APP_PWD: ${SICAC_APP_PWD:?Falta SICAC_APP_PWD en el archivo .env}
+      # Opcional (26ai Free): cifrado en reposo con TDE. Se decide ANTES del
+      # primer arranque; probarlo en local antes de usarlo en la nube.
+      # CONFIGURE_TDE: "true"
+
+    ports:
+      # RS-06: el listener SOLO escucha en el loopback de la VM, nunca en
+      # Internet. Acceso remoto: tunel SSH (ver README, seccion 4).
+      - "127.0.0.1:${ORACLE_PORT:-1521}:1521"
+
+    volumes:
+      # RDI-02: datafiles, redo, controlfiles y configuracion persistentes.
+      - oradata:/opt/oracle/oradata
+      # Scripts que corren UNA sola vez, cuando se crea la base.
+      # En hosts con SELinux (Oracle Linux, RHEL) cambiar ":ro" por ":ro,z".
+      - ./db/setup:/opt/oracle/scripts/setup:ro
+
+    networks:
+      - sicac-net
+
+    # Oracle Free usa como maximo 2 GB de RAM y 2 hilos de CPU.
+    # El tope evita que deje sin memoria a la aplicacion (VM de 4 GB o mas).
+    mem_limit: 3g
+
+    # Tiempo para un SHUTDOWN IMMEDIATE limpio (por defecto Docker da 10 s).
+    stop_grace_period: 2m
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # Aplicacion web. Descomentar cuando exista ./app con su Dockerfile.
+  # Se conecta a Oracle por la red interna usando el nombre del servicio:
+  #     host = oracle   puerto = 1521   servicio = FREEPDB1   usuario = SICAC_APP
+  # ---------------------------------------------------------------------------
+  # app:
+  #   build: ./app
+  #   container_name: sicac-app
+  #   restart: unless-stopped
+  #   depends_on:
+  #     oracle:
+  #       condition: service_healthy     # usa el healthcheck propio de la imagen
+  #   environment:
+  #     DB_HOST: oracle
+  #     DB_PORT: "1521"
+  #     DB_SERVICE: FREEPDB1
+  #     DB_USER: SICAC_APP
+  #     DB_PASSWORD: ${SICAC_APP_PWD}
+  #     TZ: America/La_Paz
+  #   ports:
+  #     - "80:8000"                      # unico puerto publico (idealmente 443)
+  #   networks:
+  #     - sicac-net
+
+networks:
+  sicac-net:
+    name: sicac-net
+    driver: bridge
+
+volumes:
+  oradata:
+    name: sicac_oradata
