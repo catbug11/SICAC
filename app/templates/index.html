@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SICAC — Dashboard Gerencial y Control</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    header { background: #1e293b; padding: 16px 24px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+    .container { max-width: 1280px; margin: 24px auto; padding: 0 20px; }
+    .grid-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 24px; }
+    .card { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 16px; }
+    .kpi-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; }
+    .kpi-val { font-size: 24px; font-weight: 700; margin-top: 6px; color: #f8fafc; }
+    .section { margin-bottom: 24px; }
+    h2 { font-size: 17px; margin: 0 0 12px 0; color: #f1f5f9; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 10px; border-bottom: 1px solid #334155; text-align: left; }
+    th { color: #94a3b8; font-weight: 600; }
+    .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .CRITICO, .ALTO { background: #7f1d1d; color: #fecaca; }
+    .MEDIO, .PENDIENTE { background: #78350f; color: #fde68a; }
+    .ATENDIDA { background: #14532d; color: #bbf7d0; }
+    .flash-ok { background: #14532d; color: #dcfce7; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+    .flash-err { background: #7f1d1d; color: #fee2e2; padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; }
+    button { background: #2563eb; color: white; border: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+    button:hover { background: #1d4ed8; }
+    .two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(460px, 1fr)); gap: 18px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <strong>SICAC</strong> · Control de Abastecimiento y Subvención de Combustibles
+    </div>
+    <div style="font-size: 12px; color: #94a3b8;">
+      Usuario: <strong>{{ db_user }}</strong> · DSN: <strong>{{ db_dsn }}</strong>
+    </div>
+  </header>
+
+  <div class="container">
+    {% if error_msg %}
+      <div class="flash-err">Error de conexión a Oracle: {{ error_msg }}</div>
+    {% endif %}
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for cat, msg in messages %}
+          <div class="{{ 'flash-ok' if cat == 'ok' else 'flash-err' }}">{{ msg }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="grid-kpis">
+      <div class="card">
+        <div class="kpi-label">Cargas Válidas</div>
+        <div class="kpi-val">{{ "{:,}".format(kpis.total_cargas) }}</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Litros Despachados</div>
+        <div class="kpi-val">{{ "{:,.1f}".format(kpis.total_litros) }} L</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Monto Cobrado (Bs)</div>
+        <div class="kpi-val">{{ "{:,.2f}".format(kpis.monto_cobrado) }}</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Subvención (Bs)</div>
+        <div class="kpi-val">{{ "{:,.2f}".format(kpis.monto_subvencionado) }}</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Alertas Pendientes</div>
+        <div class="kpi-val">{{ kpis.alertas_pendientes }}</div>
+      </div>
+      <div class="card">
+        <div class="kpi-label">Alertas Críticas</div>
+        <div class="kpi-val">{{ kpis.alertas_criticas }}</div>
+      </div>
+    </div>
+
+    <div class="card section">
+      <h2>Alertas Recientes y Control Operativo</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Riesgo</th><th>Regla</th><th>Placa</th><th>Vehículo</th>
+            <th>Conductor</th><th>Estación</th><th>Litros</th><th>Detectado / Umbral</th>
+            <th>Estado</th><th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in alertas %}
+          <tr>
+            <td>#{{ a.id_alerta }}</td>
+            <td><span class="badge {{ a.nivel_riesgo }}">{{ a.nivel_riesgo }}</span></td>
+            <td>{{ a.codigo_regla }}</td>
+            <td><strong>{{ a.placa }}</strong></td>
+            <td>{{ a.tipo_vehiculo }}</td>
+            <td>{{ a.conductor }}</td>
+            <td>{{ a.estacion }}</td>
+            <td>{{ a.cantidad_litros }}</td>
+            <td>{{ a.valor_detectado }} / {{ a.valor_umbral }}</td>
+            <td><span class="badge {{ a.estado_alerta }}">{{ a.estado_alerta }}</span></td>
+            <td>
+              {% if a.estado_alerta == 'PENDIENTE' %}
+              <form method="post" action="{{ url_for('atender_alerta', id_alerta=a.id_alerta) }}" style="display:flex;gap:4px;">
+                <input type="hidden" name="estado" value="EN_REVISION" />
+                <input type="hidden" name="observacion" value="En revision operativa desde dashboard" />
+                <button type="submit">Revisar</button>
+              </form>
+              {% else %}
+                —
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="two-col section">
+      <div class="card">
+        <h2>Subvención por Estación (Top 10)</h2>
+        <table>
+          <thead>
+            <tr><th>Estación</th><th>Combustible</th><th>Cargas</th><th>Litros</th><th>Subvención (Bs)</th></tr>
+          </thead>
+          <tbody>
+            {% for s in subvenciones %}
+            <tr>
+              <td>{{ s.estacion }}</td>
+              <td>{{ s.combustible }}</td>
+              <td>{{ s.total_cargas_validas }}</td>
+              <td>{{ "{:,.1f}".format(s.total_litros_despachados) }}</td>
+              <td>{{ "{:,.2f}".format(s.monto_subvencionado_bs) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>Balance de Inventario por Estación</h2>
+        <table>
+          <thead>
+            <tr><th>Estación</th><th>Combustible</th><th>Ingresado</th><th>Despachado</th><th>Saldo Teórico</th></tr>
+          </thead>
+          <tbody>
+            {% for inv in inventario %}
+            <tr>
+              <td>{{ inv.estacion }}</td>
+              <td>{{ inv.combustible }}</td>
+              <td>{{ "{:,.0f}".format(inv.litros_ingresados) }}</td>
+              <td>{{ "{:,.0f}".format(inv.litros_despachados) }}</td>
+              <td><strong>{{ "{:,.1f}".format(inv.saldo_teorico_litros) }} L</strong></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card section">
+      <h2>Enmascaramiento de Datos Sensibles (Vista PII)</h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>CI Enmascarado</th><th>Exp.</th><th>Nombres</th><th>Apellido Paterno</th><th>Inic. Mat.</th><th>Teléfono</th><th>Estado</th></tr>
+        </thead>
+        <tbody>
+          {% for p in personas_mask %}
+          <tr>
+            <td>{{ p.id_persona }}</td>
+            <td>{{ p.ci_enmascarado }}</td>
+            <td>{{ p.expedido }}</td>
+            <td>{{ p.nombres }}</td>
+            <td>{{ p.apellido_paterno }}</td>
+            <td>{{ p.inicial_materno }}</td>
+            <td>{{ p.telefono_enmascarado or '—' }}</td>
+            <td>{{ p.estado }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
