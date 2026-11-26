@@ -179,3 +179,16 @@ docker exec sicac-oracle /opt/oracle/setPassword.sh NUEVA_CLAVE
    SICAC_APP_USER=SICAC SICAC_APP_PWD="$SICAC_OWNER_PWD" SICAC_DB_DSN="127.0.0.1:1521/FREEPDB1" python3 app/app.py
 
 3. Abrir `http://localhost:5000` en el navegador.
+
+## 11. Dashboard Gerencial (Avance 4)
+
+1. Crear el entorno virtual e instalar dependencias:
+   python3 -m venv app/.venv
+   source app/.venv/bin/activate
+   pip install -r app/requirements.txt
+
+2. Ejecutar la aplicación web conectada a `FREEPDB1`:
+   set -a && source .env && set +a
+   SICAC_APP_USER=SICAC SICAC_APP_PWD="$SICAC_OWNER_PWD" SICAC_DB_DSN="127.0.0.1:1521/FREEPDB1" python3 app/app.py
+
+3. Abrir `http://localhost:5000` en el navegador.
